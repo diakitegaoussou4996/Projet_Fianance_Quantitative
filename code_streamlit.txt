@@ -1,0 +1,247 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+import warnings
+import itertools
+import numpy as np
+warnings.filterwarnings("ignore")
+plt.style.use('fivethirtyeight')
+import statsmodels.api as sm
+import matplotlib
+import plotly.express as px
+from statsmodels.tsa.seasonal import seasonal_decompose
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from statsmodels.tsa.seasonal import DecomposeResult, seasonal_decompose
+
+st.set_page_config(
+    page_title="Forcast Application for Equities",
+    page_icon="💰💸📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+plt.rcParams['lines.linewidth'] = 2
+matplotlib.rcParams['axes.labelsize'] = 14
+matplotlib.rcParams['xtick.labelsize'] = 12
+matplotlib.rcParams['ytick.labelsize'] = 12
+matplotlib.rcParams['text.color'] = 'k'
+# Configuration de la page 
+
+pages_name = ['Presentation', 'Modelisation_ARIMA/Graphiques','Synthèse']
+# Create a sidebar with a radio button to select the page
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Select a page", pages_name)
+
+# Importation des données
+#@st.cache
+def load_data():
+    stock = pd.read_excel('data/Data_projet.xlsx', sheet_name="Returns")
+    list = pd.read_excel('data/Data_projet.xlsx', sheet_name="List")
+    #data = data.drop('Unnamed: 0', axis=1)
+    list = list.drop(list.index[-1])
+    return stock, list
+stock, list = load_data()
+#--------------------------------------------------------------Sélecteurs dans la partie droite ----------------------------------------------------
+
+if page == 'Presentation':
+
+    st.markdown("<h1 style='text-align: center; color: black; font-size:25px; border-radius:2%;'>Forcast Application for Equities</h1>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: ; font-size:20px;'>Members: Anisoara ABABII,  Gaoussou DIAKITE,  Eunice KOFFI</h2>", unsafe_allow_html=True)
+    st.write("""
+        <div style="text-align:justify">
+        ____________________
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.image('data/gif.gif', width=300)
+    st.markdown("<h2 style='text-align: center; color:Blue ; font-size:50px;'>Welcome to our financial website ! </h2>", unsafe_allow_html=True)
+    
+    
+    add_tile = st.subheader(" Select the filters: ")
+    st.write("""
+        1. What sector do you want to invest in ?
+        """, unsafe_allow_html=True)
+    sector_select = st.selectbox(
+    '1. What sector do you want to invest in ?',
+    (list.INDUSTRY_SECTOR.unique().tolist()))
+
+    st.write("""
+        2. What is the currency you want to invest with ?
+        """, unsafe_allow_html=True)
+    currency_select = st.selectbox(
+    '2. What is the currency you want to invest with ?',
+    (list.CRNCY.unique().tolist()))
+
+    st.write("""
+        3. Which country do you want to invest in ?
+        """, unsafe_allow_html=True)
+    country_select = st.selectbox(
+    '3. Which country do you want to invest in ?',
+    (list.CNTRY_OF_DOMICILE.unique().tolist()))
+
+    table = list[(list['INDUSTRY_SECTOR'] == sector_select) & (list['CRNCY'] == currency_select ) & (list['CNTRY_OF_DOMICILE'] == country_select )]
+    st.markdown("<h1 style='font-family:Lucida Caligraphy;font-size:30px;color:DarkSlateBlue;text-align: center;'> Accordind your selections, here are the equities that we dispose: </h1>", unsafe_allow_html=True)
+    base = table.Stock.unique().tolist()
+    if len(base)==0:
+        st.markdown(f"<ul><li>Sorry, we don't find any equities for you. Please select again. </li></ul>", unsafe_allow_html=True)
+    for elem in base:
+        st.markdown(f"<ul><li>{elem}</li></ul>", unsafe_allow_html=True)
+
+
+
+
+elif page == 'Modelisation_ARIMA/Graphiques':
+    stock['Dates']=pd.to_datetime(stock.Dates,format='%Y%m%d', errors='ignore')
+    cols = ['Dates Future', 'S5ENRS Index - ']
+    stock.drop(cols, axis=1, inplace=True)
+    stock = stock.sort_values('Dates')
+    stock = stock.set_index('Dates')
+    stock.index = pd.to_datetime(stock.index)
+
+    liste = stock.columns.to_list()
+    stock_selectbox = st.selectbox(
+        "Afficher les description d'un actif que vous souhaitez?",
+        (liste)
+    )
+
+    col_name = stock_selectbox
+    if col_name in stock.columns:
+        fig = px.line(x=stock.index, y=stock[col_name], title=col_name)
+        fig.update_layout(
+            xaxis_title="Index",
+            yaxis_title="Value",
+            title={
+                'text': col_name,
+                'font': {'size': 16},
+                'x': 0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'
+            }
+        )
+        st.plotly_chart(fig)
+
+    # ___________________________________________ decomposition de la saisonalité _______________________________
+
+    def plot_seasonal_decompose(result: DecomposeResult, title="Seasonal Decomposition"):
+        return (
+            make_subplots(
+                rows=4,
+                cols=1,
+                subplot_titles=["Observed", "Trend", "Seasonal", "Residuals"],
+            )
+            .add_trace(
+                go.Scatter(x=result.seasonal.index, y=result.observed, mode="lines"),
+                row=1,
+                col=1,
+            )
+            .add_trace(
+                go.Scatter(x=result.trend.index, y=result.trend, mode="lines"),
+                row=2,
+                col=1,
+            )
+            .add_trace(
+                go.Scatter(x=result.seasonal.index, y=result.seasonal, mode="lines"),
+                row=3,
+                col=1,
+            )
+            .add_trace(
+                go.Scatter(x=result.resid.index, y=result.resid, mode="lines"),
+                row=4,
+                col=1,
+            )
+            .update_layout(
+                height=900, title=title, margin=dict(t=100), title_x=0.5, showlegend=False
+            )
+        )
+
+    result = seasonal_decompose(stock[col_name], model='additive')
+    st.write(plot_seasonal_decompose(result, title="Seasonal Decomposition of : "+ col_name))
+
+
+    #### _______________________________________________ ARIMA Model ____________________________________
+
+    p = d = q = range(0, 2)
+    pdq = list(itertools.product(p, d, q))
+    seasonal_pdq = [(x[0], x[1], x[2], 12) for x in list(itertools.product(p, d, q))]
+
+    l_param = []
+    l_param_seasonal=[]
+    l_results_aic=[]
+    for param in pdq:
+        for param_seasonal in seasonal_pdq:
+            try:
+                mod = sm.tsa.statespace.SARIMAX(stock[col_name],
+                                                order=param,
+                                                seasonal_order=param_seasonal,
+                                                enforce_stationarity=False,
+                                                enforce_invertibility=False)
+
+                results = mod.fit()
+
+                l_param.append(param)
+                l_param_seasonal.append(param_seasonal)
+                l_results_aic.append(results.aic)
+            except:
+                continue
+
+    minimum=l_results_aic[0]
+    for i in l_results_aic[1:]:
+        if i < minimum: 
+            minimum = i
+    i=l_results_aic.index(minimum)
+
+    mod = sm.tsa.statespace.SARIMAX(stock[col_name],
+                                    order=l_param[i],
+                                    seasonal_order=l_param_seasonal[i],
+                                    enforce_stationarity=False,
+                                    enforce_invertibility=False)
+
+    results = mod.fit()
+
+    #results.summary().tables[2]
+
+    plt.rcParams['lines.linewidth'] = 2
+    fig = results.plot_diagnostics(figsize=(16, 14))
+    st.pyplot(fig)
+
+    #___________________________________  predicted forcast ____________________________________
+
+    pred = results.get_prediction(start=pd.to_datetime('2021-05-31'), dynamic=False)
+    pred_ci = pred.conf_int()
+
+    fig2, ax = plt.subplots(figsize=(14, 7))
+    stock[col_name]['2017-09-30':].plot(ax=ax, label='observed')
+    pred.predicted_mean.plot(ax=ax, label='One-step ahead Forecast', alpha=.7)
+
+    ax.fill_between(pred_ci.index,
+                    pred_ci.iloc[:, 0],
+                    pred_ci.iloc[:, 1], color='k', alpha=.2)
+
+    ax.set_xlabel('Dates')
+    ax.set_ylabel('Returns')
+    plt.rcParams['lines.linewidth'] = 2
+    plt.legend()
+    plt.title("Validating forecasts")
+    st.pyplot(fig2)
+
+    ### ___________________ predicted gorozon _________________________
+
+    pred_uc = results.get_forecast(steps=70)
+    pred_ci = pred_uc.conf_int()
+    fig3, ax = plt.subplots(figsize=(14, 7))
+    stock[col_name].plot(label='observed')
+    pred_uc.predicted_mean.plot(ax=ax, label='Forecast')
+    ax.fill_between(pred_ci.index,
+                    pred_ci.iloc[:, 0],
+                    pred_ci.iloc[:, 1], color='k', alpha=.3)
+    ax.set_xlabel('Dates')
+    ax.set_ylabel('Returns')
+    plt.rcParams['lines.linewidth'] = 2
+    plt.legend()
+    st.pyplot(fig3)
+
+else:
+    st.write('qqqqq')

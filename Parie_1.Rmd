@@ -1,0 +1,410 @@
+---
+title: "Partie 1"
+output: pdf_document
+---
+
+
+```{r}
+
+#install.packages("psych")
+#install.packages(c("FactoMineR", "factoextra"))
+#install.packages("moments")
+#install.packages("tidyquant")
+#install.packages("zoo")
+#install.packages("tidyverse")
+#install.packages("ggplot2")
+#install.packages("panelr")
+#install.packages("devtools")
+#install.packages("PerformanceAnalytics")
+#install.packages("imputeTS")
+#install.packages("Matrix")
+#install.packages("tidyquant")
+#install.packages("Hmisc")
+#install.packages("gridExtra")
+#install.packages("tseries")
+
+
+```
+
+
+```{r, include=FALSE}
+library(tseries)
+library(Matrix)
+library(corrplot)
+library(RColorBrewer)
+library(tidyquant)
+library(PerformanceAnalytics)
+library(devtools)
+library(tidyverse) 
+library(psych)
+library("FactoMineR")
+library("factoextra")
+library(moments)
+library(ggplot2)
+library(zoo)
+library("plm")
+library(tidyverse)
+library(xts)
+library(panelr)
+library(xlsx)
+library(readxl)
+library("imputeTS")
+library(dplyr)
+library(timeSeries) 
+library(fPortfolio)
+library(quantmod) 
+library(caTools) 
+library(timeDate) 
+library(knitr)
+#library(tidyquant)
+library(stats)
+library(reshape2)
+library(gridExtra)
+#library(Dowd)
+
+```
+
+
+```{r}
+Returns <- read_excel('data/Data_projet.xlsx', sheet ='Returns')
+Returns_p <- read_excel('data/Data_projet.xlsx', sheet ='Returns')#data utilisé pour construire le panel
+
+stock <- read_excel('data/Data_Projet.xlsx', sheet = "List")
+
+#replace NA values in all numeric columns with respective medians
+Returns <- Returns %>% mutate(across(where(is.numeric), ~replace_na(., median(., na.rm=TRUE))))
+Returns_p <- Returns_p %>% mutate(across(where(is.numeric), ~replace_na(., median(., na.rm=TRUE))))
+#Conversion en datetime
+Returns$Dates <- as.Date(Returns$Dates)
+Returns <- xts(Returns[,3:59], order.by=Returns$Dates)
+
+#Data_Projet_EBITA_MARGIN <- read_excel("Data_Projet.xlsx", sheet = "EBITA_MARGIN")
+#Data_Projet_EV <- read_excel("Data_Projet.xlsx", sheet = "EV")
+#Data_Projet_ROIC <- read_excel("Data_Projet.xlsx", sheet = "ROIC")
+#Data_Projet_WACC <- read_excel("Data_Projet.xlsx", sheet = "WACC")
+#Data_Projet_ESG <- read_excel("Data_Projet.xlsx", sheet = "ESG_Score_from_Bloomberg")
+
+```
+
+```{r}
+
+stock %>% 
+  count(INDUSTRY_SECTOR, color = INDUSTRY_SECTOR) %>% 
+  ggplot(aes(x = INDUSTRY_SECTOR, y = n, fill = color)) +
+  geom_bar(stat = "identity") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Composition de la base de données") +
+  xlab("Secteur d'activités") +
+  ylab("Nombre")
+```
+
+______________
+  Question 1)   Analyse et Statistique descriptive
+______________
+
+Analyse Statistique descriptive (moyenne, écart-type, skewness,kurtosis, histogramme,etc.) de chaque action (à l'aide de données de panel)
+
+```{r}
+# ______________  etape 1: Construction de données de panel ______________
+
+test_DF = Returns_p[,2:58]  
+require(reshape2)
+require(PerformanceAnalytics)
+
+Custom_Melt_DataFrame = function(test_data = test_DF ,dateColumnName = c("Dates Future"), columnOfInterest1 = "equities",columnOfInterest2 = "return") {
+  molten_DF = melt(test_data,dateColumnName,stringsAsFactors=FALSE)
+  colnames(molten_DF) = c(dateColumnName,columnOfInterest1,columnOfInterest2)
+  molten_DF[,columnOfInterest1] = as.character(molten_DF[,columnOfInterest1])
+  molten_DF$index =  rep(1:(ncol(test_data)-1),each=nrow(test_data))
+  molten_DF = molten_DF[,c("index",columnOfInterest1,dateColumnName,columnOfInterest2)]
+  return(molten_DF)
+}
+
+custom_data = Custom_Melt_DataFrame(test_data = test_DF ,dateColumnName = c("Dates Future"), columnOfInterest1 ="equities",columnOfInterest2 = "return")
+
+custom_data$`Dates Future`<-as.Date(custom_data$`Dates Future`)
+class(custom_data$`Dates Future`)
+custom_data$return<-as.numeric(unlist(custom_data$return))
+
+custom_data<- pdata.frame(custom_data, index = c("index"), drop.index = TRUE)
+custom_data <- panel_data(custom_data, id = equities, wave = Dates.Future)
+custom_data <-na.omit(custom_data)
+head(custom_data)  #Affichage de panel-data
+
+```
+
+```{r}
+#Test de normalité de Jarque Berra
+
+high_cols <- c()
+low_cols <- c()
+result <- apply(Returns[,3:ncol(Returns)], 2, jarque.bera.test)
+
+for(i in 1:length(result)){
+  if(result[[i]]$p.value > 0.05){
+    high_cols <- c(high_cols, colnames(Returns)[i+2])
+  }else{
+    low_cols <- c(low_cols, colnames(Returns)[i+2])
+  }
+}
+#high_cols #les titres avec une pevalue eleve 
+#low_cols
+
+result  #visualisation des resultat du test
+```
+
+- Autocorrelation des series de returns (analyse faite en amont)
+
+```{r fig.height=10, fig.width=10}
+#for (i in 3:ncol(Returns)){
+#acf_result <- acf(Returns[,i])
+
+# Plot autocorrelation function
+#plot(acf_result)
+#}
+
+```
+
+
+```{r}
+#______________  etape2: statistique descriptive stickées dans un table  ______________
+
+stat_descriptive = custom_data %>%
+  group_by(equities) %>%
+  summarise(Minimum = round(min(return), digits = 4),
+            Maximum = round(max(return), digits = 4),
+            Moyenne = round(mean(return), digits = 4),
+            Variance = round(var(return), digits = 4),
+            Volatilite = round(sd(return), digits = 4),
+            Kurtosis = round(kurtosis(return), digits = 4),
+            Skewness = round(skewness(return), digits = 4))
+
+stat_descriptive
+#Returns<-na.omit(Returns)
+#Returns<-as.numeric(unlist(Returns))
+
+
+```
+
+```{r fig.height=5, fig.width=7, out.width="20%"}
+#______________  Graphiques individuelle par equity (Histogram) ______________
+
+range = 3:58
+for (i in 1:ncol(Returns)){
+  chart.Histogram(
+    as.numeric(unlist(Returns[,i])),
+    breaks = "FD",
+    main = names(Returns)[i],
+    xlab = "Returns",
+    ylab = "Frequency",
+    methods =  "none",
+    show.outliers = TRUE,
+    colorset = c("#23FFDC"),
+    border.col = "white",
+    lwd = 2,
+    xlim = NULL,
+    ylim = NULL,
+    element.color = "darkgray",
+    note.lines = NULL,
+    note.labels = NULL,
+    note.cex = 0.7,
+    note.color = "darkgray",
+    probability = FALSE,
+    p = 0.95, 
+    font.main=4, font.lab=4
+  )
+}
+
+```
+```{r fig.height=10, fig.width=15}
+#______________ histogramme à partir des données de panel  ______________
+
+bins_fd <- function(vec) {
+  diff(range(vec)) / (2 * IQR(vec) / length(vec)^(1 / 3))
+}
+
+ggplot(data = custom_data, mapping = aes(x = return)) +
+  geom_histogram(
+    alpha = 0.5,
+    #mapping = aes(fill = equities),
+    bins = bins_fd(custom_data$return)
+    #bins = 50
+  ) +
+  facet_wrap(. ~ equities) +
+  ggtitle("Distribution de Returns") +
+  theme(
+    panel.background = element_rect(fill = "grey97"),
+    panel.grid = element_blank(),
+)
+```
+
+
+```{r fig.height=14, fig.width=20}
+#______________  Graphiques des Returns  ______________
+
+ts.plot(Returns, col = 3:58, xlab = "Year", ylab = "Returns", main = "Stock Indices")
+legend("bottomright", colnames(Returns_p[3:58]), lty = 1, col = 3:58, bty = "c")
+
+```
+
+
+Question 2)    Performance cumulée des titres (en base100): Graphique fait en Excel.
+ 
+Question 3)    Matrice de corrélation entre les titres 
+
+```{r fig.height=10, fig.width=15}
+
+library(Hmisc)
+M = cor(Returns_p[,3:58])
+Matrice_corr <- as.data.frame(M)  #Pour visualiser les coeff de correlation, nous constrisons un data frame Matrice_corr 
+corrplot(M, type = "upper", order = "hclust", addrect =6, 
+         rect.col = "black", rect.lwd = 2,cl.pos = "r", tl.col = "black", tl.cex = 0.70, 
+         cl.cex = 1.25)
+
+```
+```{r fig.height=8, fig.width=8}
+corrplot(M, method = "number", outline = T, addgrid.col = "darkgray", order="hclust", addrect = 6, 
+         rect.col = "black", rect.lwd = 2,cl.pos = "r", tl.col = "black", tl.cex = 0.5, 
+         cl.cex = 0.5, addCoef.col = "dark", number.digits = 2, number.cex = 0.25)
+```
+
+______________
+  Question 4)  Calcul des indicateurs synthétiques du risque:   
+______________
+
+```{r}
+# ______________ 1. Sharp Ratio ______________ 
+
+Returns_xts <- xts(x = Returns_p[, 3:59], 
+                   order.by = as.Date(Returns_p$Dates))
+Index_time_series <- ts(Returns_p[,59], start = c(2017, 08), frequency = 12)
+
+ratios_1 = Returns_p %>%
+  summarise(sharp = round(SharpeRatio(ts(Returns_p[,3:58],start = c(2017, 08), frequency = 12), Rf=0.036, p=0.95, FUN="StdDev"), digits =4))
+
+ratios_1 <- as.data.frame(ratios_1)
+ratios_2 <- t(ratios_1)
+#ratios_2
+```
+
+Equities with a negative Sharp Ratio :
+```{r}
+ratios_2[ratios_2[,1] <0,]
+```
+
+
+
+VaR historique
+
+```{r}
+ratios_VaR <- lapply(3:58, function(i) round(quantile(ts(Returns_p[,i],start = c(2017, 08), frequency = 12), probs = 0.05), digits = 4))
+#ratios_VaR
+my_df <- bind_rows(ratios_VaR)
+colnames(my_df) <- c("VaR_hist")
+
+```
+
+
+Print Treynor Ratio
+
+
+```{r}
+
+result_df <- data.frame(matrix(ncol = 1, nrow = 0))
+colnames(result_df) <- c("Treynor_Ratio")
+
+for (i in 4:ncol(Returns_p)-1){
+    Returns_p=na.omit(Returns_p)
+    portfolio_returns <- ts(Returns_p[,i])
+
+    # Definir le benchmark returns
+    benchmark_returns <- ts(Returns_p[,59])
+
+    # Calculer portfolio beta
+    portfolio_beta <- (cov(portfolio_returns,benchmark_returns)/var(benchmark_returns))
+
+    # Calculer portfolio excess returns
+    portfolio_excess_returns <- portfolio_returns - benchmark_returns
+
+    # Calculer Treynor Ratio
+    treynor_ratio <- mean(portfolio_excess_returns) / portfolio_beta
+
+    # creer le data frame à partir des resultats
+    result_df <- rbind(result_df, data.frame(Treynor_Ratio = treynor_ratio))
+}
+
+treynor <- result_df
+treynor_vector <- treynor$S5ENRS.Index
+barplot(treynor_vector, ylab = "Treynor Ratio")
+
+```
+
+
+Sortino Ratio
+
+```{r}
+
+#une autre facon de calculer sortino ratio
+for (i in 4:ncol(Returns_p)-1){
+downside_deviation <- SortinoRatio(ts(Returns_p[,i]))
+# Calculate the Sortino Ratio
+sortino_ratio <- mean(ts(Returns_p[,i])) / downside_deviation
+# Print the Sortino Ratio
+#print(sortino_ratio)
+}
+```
+
+
+```{r}
+sortino_ratio <- function(series,rf) {
+    mean <- mean(series) -rf
+    std_neg <- sd(series[series < 0])
+    return(mean/std_neg)
+}
+sortinos <- apply(Returns_p[3:58], 2, sortino_ratio, rf=0.036)
+barplot(sortinos, ylab = "Sortino Ratio")
+```
+Max_drawdown
+
+```{r}
+max_drawdown <- function(return_series) {
+    comp_ret <- cumprod(return_series + 1)
+    peak <- cummax(comp_ret)
+    dd <- (comp_ret/peak)-1
+    return(min(dd))
+}
+
+max_drawdowns <- apply(ts(Returns_p[3:58]), 2, max_drawdown)
+barplot(max_drawdowns, ylab = "Max Drawdown" )
+
+```
+
+Calmars
+```{r}
+calmars <- colMeans(ts(Returns_p[3:58]))/abs(max_drawdowns)
+barplot(calmars, ylab = "Calmar ratio")
+```
+
+
+```{r}
+sharpe_ratio <- function(return_series, rf) {
+    mean <- mean(return_series) -rf
+    sigma <- sd(return_series) 
+    return(mean / sigma)
+}
+sharpes <- apply(ts(Returns_p[3:58]), 2, sharpe_ratio, rf=0.036)
+
+barplot(sharpes)
+
+```
+
+```{r}
+btstats <- data.frame(Sharpe_ratio=sharpes,Treynor_ratio= treynor_vector, Calmar_ratio = calmars, Sortino_ratio =sortinos, var = my_df, Max_drawdowns = max_drawdowns)
+btstats
+```
+
+
+
+
+

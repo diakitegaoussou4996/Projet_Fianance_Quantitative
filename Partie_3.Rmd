@@ -1,0 +1,164 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+## Librairies
+```{r, include=FALSE}
+
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(timeDate)
+library(timeSeries) 
+library(fPortfolio)
+library(timeDate) 
+library(PerformanceAnalytics)
+library(PortfolioAnalytics)
+```
+
+-------------------------------------------------------------------------------------------------------
+
+## Import de la base de données Returns
+```{r, include=FALSE}
+ 
+Returns <- read.csv("data/Returns_partie3.csv", sep = ",", header = T)
+
+#Je renomme la date
+colnames(Returns)[colnames(Returns)=="Date_2"] <- "Date"
+
+# Je supprime le rendement SP500 dans la nbase de données rendement 
+Returns[c('S5ENRS')] <- list(NULL)
+
+
+```
+
+
+
+
+## Formatage de la date 
+```{r, include=FALSE}
+Returns$Date <- as.Date(Returns$Date, format="%Y-%m-%d")
+
+```
+
+-------------------------------------------------------------------------------------------------------
+
+
+### Question 7) Représenter l'ensemble des actions sur un même plan rendement volatilité?..
+```{r, include=FALSE}
+
+fontir_effi_return <- as.timeSeries(Returns)
+pspec <- portfolioSpec()
+
+front_eff <- portfolioFrontier(fontir_effi_return, constraints = "LongOnly")
+
+plot(front_eff, c(1, 4), main="Frontière d'efficacité du portefeuille", xlab="Risque", ylab="Rendement")
+
+
+# 1 : fronti?re efficiente
+# 4 : les actifs individuels
+```
+
+
+## Graphique : representation des actifs sur un plan rendement / volatilité avec le nom des stocks
+```{r, include=FALSE, fig.height=5, fig.width=10}
+port <- portfolio.spec(assets = c(colnames(fontir_effi_return)))
+port <- add.constraint(portfolio = port, type = "long_only")
+
+port_rnd <- add.objective(portfolio = port, type = "risk", name = "StdDev")
+
+port_rnd <- add.objective(portfolio = port_rnd, type = "return", name = "mean")
+
+rand_p <- optimize.portfolio(R = fontir_effi_return, portfolio = port_rnd, optimize_method = "random",
+    trace = TRUE, search_size = 1000)
+
+#par(mar = c(5, 5, 4, 5) + 0.1, mgp = c(3, 1, 0), cex = 1.5)
+
+chart.RiskReward(rand_p, risk.col = "StdDev", return.col = "mean", chart.assets = TRUE)
+```
+
+-------------------------------------------------------------------------------------------------------
+
+
+# l'ensemble des portefeuilles qu'on peut constituer sur un plan rendement risque avec ces actions sur un même plan rendement volatilit?.
+
+```{r, include=FALSE}
+eff_front <- portfolioFrontier(fontir_effi_return, constraints = "LongOnly")
+plot(eff_front, c(1, 2, 3, 4,5, 6))
+```
+
+
+```{r, include=FALSE}
+eff_front <- portfolioFrontier(fontir_effi_return, constraints = "LongOnly")
+plot(eff_front, c(1, 2, 3, 4, 5,6,7))
+```
+
+
+```{r, include=FALSE}
+tailoredFrontierPlot(eff_front, sharpeRatio = FALSE, risk = "Sigma")
+```
+
+
+```{r, include=FALSE}
+weightsPlot(eff_front)
+```
+
+# Question 9 ) Calculer et représenter le portefeuille ? variance min Pour le portefeuille ? variance min : donner le résumé des statistiques (compositions, risques, rendements.)
+
+## Graphique : repr?sentation du portefeuille ? variance minimale
+```{r, include=FALSE}
+eff_front <- portfolioFrontier(fontir_effi_return, constraints = "LongOnly")
+plot(eff_front, c(1, 2))
+```
+
+
+## Details du portefeuille ? variance minimale
+```{r, include=FALSE}
+minvar_ptf <- minvariancePortfolio(fontir_effi_return,  spec = portfolioSpec())
+summary(minvar_ptf)
+```
+
+-------------------------------------------------------------------------------------------------------
+
+
+# Question 10) Calculer Sharpe, rentabilit? et volatilit? du portefeuille ?quipond?rant et constitu? par toutes les actions. 
+
+```{r, include=FALSE}
+eff_front = portfolioFrontier(fontir_effi_return, constraints = "LongOnly")
+plot(eff_front, c(1, 5)) # portefeuille équipondéré
+```
+
+
+## Pr?paration des donn?es
+```{r, include=FALSE}
+stock_return <- xts(x = subset(Returns, select = -c(Date)), order.by = as.Date(Returns$Date))
+stock_return <- na.omit(stock_return)
+```
+
+
+## Details du Portefeuille équipondéré
+```{r, include=FALSE}
+w = 1/57
+stock_weight = c(w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w,w)
+ewp_ptf = Return.portfolio(stock_return, weights = stock_weight)
+```
+
+
+```{r, include=FALSE}
+stat_desc <- function(return, rf){
+  stats <- Return.cumulative(return)
+  stats <- rbind(stats, StdDev(return))
+  stats <- rbind(stats, SharpeRatio(return, Rf = rf, FUN = "StdDev"))
+  rownames(stats) <- c("Rendement cumul?", "Volatilit?", "Ratio de Sharpe")
+  stats <- t(stats)
+  return(stats)
+}
+
+results_Q7 <- stat_desc(ewp_ptf, rf = 0.036)
+results_Q7
+```
+
+
